@@ -1,7 +1,7 @@
 {
-  "name": "relay-starter-kit",
+  "name": "relay-example-players-positions",
   "private": true,
-  "description": "A quick way to get up and running with Relay",
+  "description": "A bidirectional data example using React, Relay, and GraphQL.",
   "repository": "facebook/relay-starter-kit",
   "version": "0.1.0",
   "scripts": {

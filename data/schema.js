@@ -1,12 +1,3 @@
-/**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
- *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
- */
-
 import {
   GraphQLBoolean,
   GraphQLFloat,
@@ -23,6 +14,7 @@ import {
   connectionArgs,
   connectionDefinitions,
   connectionFromArray,
+  cursorForObjectInConnection,
   fromGlobalId,
   globalIdField,
   mutationWithClientMutationId,
@@ -30,114 +22,274 @@ import {
 } from 'graphql-relay';
 
 import {
-  // Import methods that your schema can use to interact with your database
+  Viewer,
+  Role,
   User,
-  Widget,
-  getUser,
   getViewer,
-  getWidget,
-  getWidgets,
+  getRole,
+  getUser,
+  createUser,
+  addUserRole,
+  removeUserRole,
 } from './database';
 
-/**
- * We get the node interface and field from the Relay library.
- *
- * The first method defines the way we resolve an ID to its object.
- * The second defines the way we resolve an object to its GraphQL type.
- */
 var {nodeInterface, nodeField} = nodeDefinitions(
   (globalId) => {
     var {type, id} = fromGlobalId(globalId);
-    if (type === 'User') {
+    if (type === 'Viewer') {
+      return getViewer();
+    } else if (type === 'Role') {
+      return getRole(id);
+    } else if (type === 'User') {
       return getUser(id);
-    } else if (type === 'Widget') {
-      return getWidget(id);
     } else {
       return null;
     }
   },
   (obj) => {
-    if (obj instanceof User) {
-      return userType;
-    } else if (obj instanceof Widget)  {
-      return widgetType;
+    if (obj instanceof Viewer) {
+      return GraphQLViewer;
+    } else if (obj instanceof Role) {
+      return GraphQLRole;
+    } else if (obj instanceof User) {
+      return GraphQLUser;
     } else {
       return null;
     }
   }
 );
 
-/**
- * Define your own types here
- */
-
-var userType = new GraphQLObjectType({
+var GraphQLUser = new GraphQLObjectType({
   name: 'User',
-  description: 'A person who uses our app',
+  description: 'A person who uses our app.',
   fields: () => ({
     id: globalIdField('User'),
-    widgets: {
-      type: widgetConnection,
-      description: 'A person\'s collection of widgets',
-      args: connectionArgs,
-      resolve: (_, args) => connectionFromArray(getWidgets(), args),
-    },
-  }),
-  interfaces: [nodeInterface],
-});
-
-var widgetType = new GraphQLObjectType({
-  name: 'Widget',
-  description: 'A shiny widget',
-  fields: () => ({
-    id: globalIdField('Widget'),
     name: {
       type: GraphQLString,
-      description: 'The name of the widget',
+      description: 'A person\'s name.',
+    },
+    roles: {
+      type: RoleConnection,
+      description: 'A person\'s list of labor inputs.',
+      args: connectionArgs,
+      resolve: (_, args) => connectionFromArray(
+        _.roles.map(id => getRole(id)),
+        args
+      ),
     },
   }),
   interfaces: [nodeInterface],
 });
 
-/**
- * Define your own connection types here
- */
-var {connectionType: widgetConnection} =
-  connectionDefinitions({name: 'Widget', nodeType: widgetType});
-
-/**
- * This is the type that will be the root of our query,
- * and the entry point into our schema.
- */
-var queryType = new GraphQLObjectType({
-  name: 'Query',
-  fields: () => ({
-    node: nodeField,
-    // Add your own root fields here
-    viewer: {
-      type: userType,
-      resolve: () => getViewer(),
-    },
-  }),
+var {
+  connectionType: UserConnection,
+  edgeType: GraphQLUserEdge
+} = connectionDefinitions({
+  name: 'User',
+  nodeType: GraphQLUser,
 });
 
-/**
- * This is the type that will be the root of our mutations,
- * and the entry point into performing writes in our schema.
- */
-var mutationType = new GraphQLObjectType({
+var GraphQLRole = new GraphQLObjectType({
+  name: 'Role',
+  description: 'A labor input.',
+  fields: {
+    id: globalIdField('Role'),
+    name: {
+      type: GraphQLString,
+      description: 'A labor input\'s name.',
+    },
+    users: {
+      type: UserConnection,
+      description: 'A labor input\'s list of users.',
+      args: connectionArgs,
+      resolve: (_, args) => connectionFromArray(
+        _.users.map(id => getUser(id)),
+        args
+      ),
+    },
+  },
+  interfaces: [nodeInterface],
+});
+
+var {
+  connectionType: RoleConnection,
+  edgeType: GraphQLRoleEdge
+} = connectionDefinitions({
+  name: 'Role',
+  nodeType: GraphQLRole,
+});
+
+var GraphQLViewer = new GraphQLObjectType({
+  name: 'Viewer',
+  description: 'A root-level client wrapper.',
+  fields: {
+    id: globalIdField('Viewer'),
+    roles: {
+      type: RoleConnection,
+      args: connectionArgs,
+      resolve: (_, args) => connectionFromArray(
+        _.roles.map(id => getRole(id)),
+        args
+      ),
+    },
+    users: {
+      type: UserConnection,
+      args: connectionArgs,
+      resolve: (_, args) => connectionFromArray(
+        _.users.map(id => getUser(id)),
+        args
+      ),
+    },
+  },
+  interfaces: [nodeInterface],
+});
+
+var Root = new GraphQLObjectType({
+  name: 'Root',
+  fields: {
+    viewer: {
+      type: GraphQLViewer,
+      resolve: () => getViewer(),
+    },
+    node: nodeField,
+  },
+});
+
+var GraphQLNewUserMutation = mutationWithClientMutationId({
+  name: 'NewUser',
+  inputFields: {
+    userName: {
+      type: new GraphQLNonNull(GraphQLString)
+    }
+  },
+  outputFields: {
+    userEdge: {
+      type: GraphQLUserEdge,
+      resolve: ({localUserId}) => {
+        var viewer = getViewer();
+        var user = getUser(localUserId);
+        return {
+          cursor: cursorForObjectInConnection(
+            viewer.users.map(id => getUser(id)),
+            user
+          ),
+          node: user,
+        };
+      }
+    },
+    viewer: {
+      type: GraphQLViewer,
+      resolve: () => getViewer(),
+    }
+  },
+  mutateAndGetPayload: ({userName}) => {
+    var localUserId = createUser(userName);
+    return {localUserId};
+  }
+});
+
+var GraphQLAddUserRoleMutation = mutationWithClientMutationId({
+  name: 'AddUserRole',
+  inputFields: {
+    userId: {
+      type: new GraphQLNonNull(GraphQLID)
+    },
+    roleId: {
+      type: new GraphQLNonNull(GraphQLID)
+    }
+  },
+  outputFields: {
+    userEdge: {
+      type: GraphQLUserEdge,
+      resolve: ({localRoleId, localUserId}) => {
+        var role = getRole(localRoleId);
+        var user = getUser(localUserId);
+        return {
+          cursor: cursorForObjectInConnection(
+            role.users.map(id => getUser(id)),
+            user
+          ),
+          node: user,
+        };
+      }
+    },
+    roleEdge: {
+      type: GraphQLRoleEdge,
+      resolve: ({localRoleId, localUserId}) => {
+        var role = getRole(localRoleId);
+        var user = getUser(localUserId);
+        return {
+          cursor: cursorForObjectInConnection(
+            user.roles.map(id => getRole(id)), 
+            role
+          ),
+          node: role,
+        };
+      }
+    },
+    user: {
+      type: GraphQLUser,
+      resolve: ({localUserId}) => getUser(localUserId),
+    },
+    role: {
+      type: GraphQLRole,
+      resolve: ({localRoleId}) => getRole(localRoleId),
+    },
+  },
+  mutateAndGetPayload: ({userId, roleId}) => {
+    var localUserId = fromGlobalId(userId).id;
+    var localRoleId = fromGlobalId(roleId).id;
+    addUserRole(localUserId, localRoleId);
+    return { localUserId, localRoleId };
+  }
+});
+
+var GraphQLRemoveUserRoleMutation = mutationWithClientMutationId({
+  name: 'RemoveUserRole',
+  inputFields: {
+    userId: {
+      type: new GraphQLNonNull(GraphQLID)
+    },
+    roleId: {
+      type: new GraphQLNonNull(GraphQLID)
+    }
+  },
+  outputFields: {
+    user: {
+      type: GraphQLUser,
+      resolve: ({localUserId}) => getUser(localUserId),
+    },
+    role: {
+      type: GraphQLRole,
+      resolve: ({localRoleId}) => getRole(localRoleId),
+    },
+    removedUserID: {
+      type: GraphQLID,
+      resolve: ({localUserId}) => localUserId,
+    },
+    removedRoleID: {
+      type: GraphQLID,
+      resolve: ({localRoleId}) => localRoleId,
+    },
+  },
+  mutateAndGetPayload: ({userId, roleId}) => {
+    var localUserId = fromGlobalId(userId).id;
+    var localRoleId = fromGlobalId(roleId).id;
+    removeUserRole(localUserId, localRoleId);
+    return { localUserId, localRoleId };
+  }
+});
+
+var Mutation = new GraphQLObjectType({
   name: 'Mutation',
   fields: () => ({
-    // Add your own mutations here
+    newUser: GraphQLNewUserMutation,
+    addUserRole: GraphQLAddUserRoleMutation,
+    removeUserRole: GraphQLRemoveUserRoleMutation,
   })
 });
 
-/**
- * Finally, we construct our schema (whose starting query type is the query
- * type we defined above) and export it.
- */
 export var Schema = new GraphQLSchema({
-  query: queryType,
-  // Uncomment the following after adding some mutation fields:
-  // mutation: mutationType
+  query: Root,
+  mutation: Mutation
 });

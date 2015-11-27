@@ -1,6 +1,6 @@
-# Relay Starter Kit
+# Relay Example Players Positions
 
-This kit includes an app server, a GraphQL server, and a transpiler that you can use to get started building an app with Relay. For a walkthrough, see the [Relay tutorial](https://facebook.github.io/relay/docs/tutorial.html).
+A bidirectional data example using React, Relay, and GraphQL.
 
 ## Installation
 
@@ -31,4 +31,6 @@ npm start
 
 ## License
 
-Relay Starter Kit is [BSD licensed](./LICENSE). We also provide an additional [patent grant](./PATENTS).
+Copyright (c) 2015, Ryan Blakeley  
+[Creative Commons BY 4.0](http://creativecommons.org/licenses/by/4.0/)  
+Parts from Relay Starter Kit, which is [BSD licensed](./LICENSE) and provides an additional [patent grant](./PATENTS).
